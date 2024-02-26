@@ -48,11 +48,11 @@ class ImagePaths(Dataset):
         # image = (image / 127.5 - 1.0).astype(np.float32)
         image = self.preprocessor(image)
         # image = image.permute(2, 0, 1) 
-        return image
+        return image,image_path
 
     def __getitem__(self, i):
-        example = self.preprocess_image(self.images[i])
-        return example
+        example,image_path = self.preprocess_image(self.images[i])
+        return example,image_path
 
 
 def load_data(args):

@@ -119,7 +119,8 @@ class BidirectionalTransformer(nn.Module):
         self.Token_Prediction = nn.Sequential(*[
             nn.Linear(in_features=args.dim, out_features=361),
             nn.GELU(),
-            nn.LayerNorm(361, eps=1e-12)
+            nn.LayerNorm(361, eps=1e-12),
+            nn.Linear(361,361)
         ])
         self.bias = nn.Parameter(torch.zeros(self.num_image_tokens+1, args.num_codebook_vectors + 2))
         self.ln = nn.LayerNorm(args.dim, eps=1e-12)
@@ -138,6 +139,7 @@ class BidirectionalTransformer(nn.Module):
         # token_embeddings = self.tok_emb(img)
         # print(token_embeddings.shape)
         emb = self.emb(x)
+
         # emb = torch.permute(x,(0,2,3,1)).view(B,-1,768)
         # print(emb.shape)
         t = x.shape[1]
@@ -146,8 +148,10 @@ class BidirectionalTransformer(nn.Module):
         # print(position_embeddings.shape)
         # print(emb.shape)
         embed = position_embeddings + emb 
+
         # print(embed.shape)
-        embed = torch.permute(embed,(0,2,3,1)).view(B,-1,256)
+        embed = torch.permute(embed,(0,2,3,1))
+        embed = embed.view(B,-1,256)
         embed = self.ln(embed)
         # print(embed.shape)
         embed = self.drop(embed)

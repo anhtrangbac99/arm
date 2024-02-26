@@ -44,6 +44,7 @@ class TrainTransformer:
             with tqdm(range(len(train_dataset))) as pbar:
                 self.lr_schedule.step()
                 for i, imgs in zip(pbar, train_dataset):
+                    imgs,_ = imgs
                     imgs = imgs.to(device=args.device)
                     logits, target = self.model(imgs)
                     logits = torch.permute(logits,(0,2,1)).view(logits.shape[0],logits.shape[2],target.shape[2],target.shape[3])
@@ -109,7 +110,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="VQGAN")
     parser.add_argument('--run-name', type=str, default=None)
     parser.add_argument('--latent-dim', type=int, default=32, help='Latent dimension n_z.')
-    parser.add_argument('--image-size', type=int, default=64, help='Image height and width.)')
+    parser.add_argument('--image-size', type=int, default=9, help='Image height and width.)')
     parser.add_argument('--num-codebook-vectors', type=int, default=8192, help='Number of codebook vectors.')
     parser.add_argument('--beta', type=float, default=0.25, help='Commitment loss scalar.')
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images.')
@@ -133,11 +134,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.run_name = "<name>"
     args.dataset_path = r"GOPRO_S/blur"
-    # args.checkpoint_path = r".\checkpoints"
+    args.checkpoint_path = r".\checkpoints"
     args.n_layers = 4
     args.dim = 256
     args.hidden_dim = 3072
-    args.batch_size = 4
+    args.batch_size = 1
     args.accum_grad = 25
     args.epochs = 1000
 
@@ -149,7 +150,7 @@ if __name__ == '__main__':
 
     train_transformer = TrainTransformer(args)
     
-    # x = torch.rand(1,3,9,9)#.to(device=args.device)
-    
+    # x = torch.rand(1,3,9,9).to(device=args.device)
+    # model = VQGANTransformer(args).to(device=args.device)
     # model(x)
     

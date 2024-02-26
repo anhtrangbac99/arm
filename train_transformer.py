@@ -45,6 +45,7 @@ class TrainTransformer:
             with tqdm(range(len(train_dataset))) as pbar:
                 self.lr_schedule.step()
                 for i, imgs in zip(pbar, train_dataset):
+                    imgs,_ = imgs
                     imgs = imgs.to(device=args.device)
                     logits, target = self.model(imgs)
                     logits = torch.permute(logits,(0,2,1)).view(logits.shape[0],logits.shape[2],target.shape[2],target.shape[3])
@@ -137,11 +138,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.run_name = "<name>"
     args.dataset_path = r"GOPRO/train"
-    # args.checkpoint_path = r".\checkpoints"
+    args.checkpoint_path = r"checkpoints"
     args.n_layers = 4
     args.dim = 256
     args.hidden_dim = 3072
-    args.batch_size = 16
+    args.batch_size = 4
     args.accum_grad = 25
     args.epochs = 1000
 

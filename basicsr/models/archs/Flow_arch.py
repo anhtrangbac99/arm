@@ -46,6 +46,10 @@ class KernelPrior(nn.Module):
     def log_prob(self, x, y=None):
         # log_prob(u) is always negative, sum_log_abs_det_jacobians mostly negative -> log_prob is always negative
         u, sum_log_abs_det_jacobians = self.forward(x, y)
+        # print(sum_log_abs_det_jacobians)
+        # print(self.base_dist.log_prob(u).sum(1))
+        # print(self.base_dist.log_prob(u).shape)
+        # print(sum_log_abs_det_jacobians.shape)
         return self.base_dist.log_prob(u).sum(1) + sum_log_abs_det_jacobians, u  # should all be summation
 
     def post_process(self, x):

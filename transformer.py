@@ -61,7 +61,8 @@ class VQGANTransformer(nn.Module):
     
     @torch.no_grad()
     def flow_to_log_prob(self,x):
-        log_prob,k = self.flows.log_prob(x)
+        log_prob,_ = self.flows.log_prob(x)
+        k,_ = self.flows.inverse(x)
         return k,-log_prob
 
     def forward(self, x):
@@ -80,50 +81,55 @@ class VQGANTransformer(nn.Module):
 
         
          # kernel estimation: size [B, H*W, 19, 19]
-        kernel_code, _ = self.kernel_extra(x)
-        kernel_code = (kernel_code - torch.mean(kernel_code, dim=[2, 3], keepdim=True)) / torch.std(kernel_code,
-                                                                                                    dim=[2, 3],
-                                                                                                    keepdim=True)
-        # # code uncertainty
-        # sigma = kernel_var
-        # kernel_code_uncertain = kernel_code * torch.sqrt(1 - torch.square(sigma)) + torch.randn_like(kernel_code) * sigma
+        with torch.no_grad():
+            kernel_code, _ = self.kernel_extra(x)
+            kernel_code = (kernel_code - torch.mean(kernel_code, dim=[2, 3], keepdim=True)) / torch.std(kernel_code,
+                                                                                                        dim=[2, 3],
+                                                                                                        keepdim=True)
+            # # code uncertainty
+            # sigma = kernel_var
+            # kernel_code_uncertain = kernel_code * torch.sqrt(1 - torch.square(sigma)) + torch.randn_like(kernel_code) * sigma
 
-        kernel,nev_log_prb = self.flow_to_log_prob(kernel_code.reshape(kernel_code.shape[0]*kernel_code.shape[1], -1))
-        
-        kernel = kernel.reshape(kernel_code.shape[0], kernel_code.shape[1], self.kernel_size, self.kernel_size)
-        kernel_blur = kernel
+            kernel,nev_log_prb = self.flow_to_log_prob(kernel_code.reshape(kernel_code.shape[0]*kernel_code.shape[1], -1))
+            kernel = kernel.reshape(kernel_code.shape[0], kernel_code.shape[1], self.kernel_size, self.kernel_size)
+            kernel_blur = kernel
 
-        kernel = kernel.permute(0, 2, 3, 1).reshape(B, self.kernel_size*self.kernel_size, x.shape[2], x.shape[3]) #Bx(19*19)xHxW
-        nev_log_prb = nev_log_prb.view(B,H,W)
+            kernel = kernel.permute(0, 2, 3, 1).reshape(B, self.kernel_size*self.kernel_size, x.shape[2], x.shape[3]) #Bx(19*19)xHxW
+            nev_log_prb = nev_log_prb.reshape(B,H,W)
 
 
         sos_tokens = torch.ones(kernel.shape, dtype=torch.long, device=kernel.device) * self.sos_token
 
-        r = math.floor(self.gamma(np.random.uniform()) * kernel.shape[1])
+        # r = math.floor(self.gamma(np.random.uniform()) kernel.shape[1])
         # sample = torch.rand(kernel.shape, device=kernel.device).topk(r, dim=1).indices
-        temperature = 1
-        mask_ratio = 0.99
-        threshold = 0.1
+        temperature = 0.3
+        mask_ratio = 0.7
+        threshold = torch.min(nev_log_prb) + temperature* (torch.max(nev_log_prb) - torch.min(nev_log_prb))
         unknown_number_in_the_beginning = (nev_log_prb <= threshold)
-
-        # mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
         
+        mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
         mask_len = torch.floor(unknown_number_in_the_beginning*mask_ratio)
         # mask_len = torch.zeros_like(mask_len) # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
         
-        confidence = nev_log_prb + temperature * torch.distributions.gumbel.Gumbel(0, 1).sample(nev_log_prb.shape).to(kernel.device)
+        confidence = nev_log_prb #+ temperature * torch.distributions.gumbel.Gumbel(0, 1).sample(nev_log_prb.shape).to(kernel.device)
+        # print(confidence)
         sorted_confidence, _ = torch.sort(confidence, dim=-1)
         
         # Obtains cut off threshold given the mask lengths.
 
         cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
         # Masks tokens with lower confidence.
-        sample = (confidence < cut_off)
-
+        # print(cut_off)
+        sample = (confidence <= cut_off)
+        # print(sample)
         # print(sample.indices[0])
+        
+        # sample = torch.topk(confidence,3)
         mask = torch.ones(kernel.shape, dtype=torch.bool, device=kernel.device)
         # print(mask*sample.view(B,1,H,W))
         mask = mask * sample.view(B,1,H,W)
+        # print(mask)
+
         # mask.scatter_(dim=1, index=sample.indices, value=True)
 
         # torch.rand(z_indices.shape, device=z_indices.device)
@@ -133,13 +139,13 @@ class VQGANTransformer(nn.Module):
         # masked_indices = torch.zeros_like(z_indices)
         masked_indices = self.mask_token_id * torch.ones_like(kernel, device=kernel.device)
         a_kernel= mask * kernel + (~mask) * masked_indices
-
         # a_kernel = torch.cat((sos_tokens, a_kernel), dim=1).long()
 
         # target = torch.cat((sos_tokens, kernel), dim=1)
 
         logits = self.transformer(a_kernel.float())
-
+        # print(logits.shape)
+        # print(kernel.shape)
         return logits, kernel #target
 
     def top_k_logits(self, logits, k):
