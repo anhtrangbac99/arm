@@ -36,7 +36,8 @@ class TrainTransformer:
         self.train(args)
 
     def train(self, args):
-        self.model = torch.nn.DataParallel(self.model,device_ids=[0,1,2,3])
+        devide_ids = range(torch.cuda.device_count())
+        self.model = torch.nn.DataParallel(self.model,device_ids=devide_ids)
         train_dataset = load_data(args)
         len_train_dataset = len(train_dataset)
         step = args.start_from_epoch * len_train_dataset
@@ -53,7 +54,7 @@ class TrainTransformer:
                     # print(target.reshape(-1).shape)
                     # loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), target.reshape(-1))
                     
-                    loss = F.l1_loss(logits,target)
+                    loss = F.mse_loss(logits,target)
                     loss.backward()
 
                     # print('correct')
