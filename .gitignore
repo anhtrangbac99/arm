@@ -2,3 +2,4 @@ GOPRO/*
 checkpoints/*
 outputs/*
 errors/*
+*.sh
