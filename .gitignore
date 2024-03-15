@@ -3,3 +3,5 @@ checkpoints/*
 outputs/*
 errors/*
 *.sh
+results_vqgan/*
+checkpoints_vqgan/*
