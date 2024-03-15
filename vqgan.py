@@ -15,6 +15,7 @@ class VQGAN(nn.Module):
         self.kernel_extra = code_extra_mean_var(kernel_size=19)
         self.kernel_size = 19
         self.flows = self.load_flows(args)
+        self.kernel_conv = Kernel_Conv(args.kernel_size, 3, 3).to(args.device)
 
         self.codebook = Codebook(args).to(device=args.device)
         self.quant_conv = nn.Conv2d(args.latent_dim, args.latent_dim, 1).to(device=args.device)
@@ -54,7 +55,7 @@ class VQGAN(nn.Module):
             
             return kernel
     
-    def forward(self, imgs):
+    def forward(self, imgs,sharps):
 
         kernel = self.kernel_estimate(imgs)
         # encoded_images = self.encoder(imgs)
@@ -63,8 +64,11 @@ class VQGAN(nn.Module):
         quantized_codebook_mapping = self.post_quant_conv(codebook_mapping)
         
         # decoded_images = self.decoder(quantized_codebook_mapping)
+        disc_fake = self.conv_kernel(sharps,quantized_codebook_mapping)
+        return quantized_codebook_mapping, codebook_indices, q_loss,disc_fake
 
-        return quantized_codebook_mapping, codebook_indices, q_loss
+    def conv_kernel(self,img,kernel):
+        return self.kernel_conv(img,kernel)
 
     def encode(self, x):
         encoded_images = self.encoder(x)
@@ -103,7 +107,7 @@ class Kernel_Conv(nn.Module):
         super(Kernel_Conv, self).__init__()
         self.kernel_size = kernel_size
         self.conv_1 = nn.Sequential(
-                        nn.Conv2d(in_ch, out_ch, kernel_size=1, stride=1, padding=1),
+                        nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=1,padding=1),
                         nn.GELU()
                         )
         # self.conv_kernel = nn.Sequential(
@@ -113,17 +117,20 @@ class Kernel_Conv(nn.Module):
         #                 nn.GELU()
         #                 )
         self.conv_2 = nn.Sequential(
-                        nn.Conv2d(out_ch, out_ch, kernel_size=1, stride=1, padding=1),
+                        nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1,padding=1),
                         nn.Sigmoid()
                         )
     
-    def convolution_with_different_kernels(image, kernels,kernel_size):
+    def convolution_with_different_kernels(self,image, kernels,kernel_size):
         # Pad the image tensor to handle borders
         pad = int(19/2)
+        print(image.shape)
         padded_image = torch.nn.functional.pad(image, (pad,pad,pad,pad), mode='constant')
         unfolded_image = padded_image.unfold(2, kernel_size, 1).unfold(3, kernel_size, 1)
 
         # Reshape kernels to match the shape of unfolded image patches
+        B,C,H,W = kernels.shape
+        kernels = kernels.permute(0,2,3,1).reshape(B,H,W,19,19)
         kernels = kernels.unsqueeze(1)
 
         # Perform element-wise multiplication between unfolded image patches and kernels
@@ -139,6 +146,6 @@ class Kernel_Conv(nn.Module):
 
         output = self.convolution_with_different_kernels(x,kernel,self.kernel_size)
 
-        x = self.conv_2(x,output)
+        output = self.conv_2(output)
 
-        return x
+        return output

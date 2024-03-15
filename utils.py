@@ -41,6 +41,7 @@ class ImagePaths(Dataset):
 
     def preprocess_image(self, image_path):
         image = Image.open(image_path,mode='r')
+
         if not image.mode == "RGB":
             image = image.convert("RGB")
         # image = np.array(image).astype(np.uint8)
@@ -54,12 +55,68 @@ class ImagePaths(Dataset):
         example,image_path = self.preprocess_image(self.images[i])
         return example,image_path
 
+class ImagePathsVQ(Dataset):
+    def __init__(self, path, size=None):
+        self.size = size
+
+        self.folders = [os.path.join(path, file) for file in os.listdir(path)]
+        # self.sharp_folders_path = os.path.join(path, file,'sharp') for file in os.listdir(path)]
+
+        self.blur_images = []
+        self.sharp_images = []
+        for folder in self.folders:
+            for sfolder in os.listdir(os.path.join(folder,'blur')):
+                # for file in os.listdir(os.path.join(folder,'blur',sfolder)):
+                self.sharp_images.append(os.path.join(folder,'sharp',sfolder))
+                self.blur_images.append(os.path.join(folder,'blur',sfolder))
+            
+        # for folder in self.sharp_folders
+        #     self.images.extend([os.path.join(folder,file)for file in os.listdir(folder)])
+        self._length = len(self.blur_images)
+
+
+        # self.images = [os.path.join(path, file) for file in os.listdir(path)]
+        # self._length = len(self.images)
+
+        # self.rescaler = albumentations.SmallestMaxSize(max_size=self.size)
+        # self.cropper = albumentations.CenterCrop(height=self.size, width=self.size)
+        # self.preprocessor = albumentations.Compose([self.rescaler, self.cropper])
+        
+        self.preprocessor = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Resize(self.size),
+                transforms.CenterCrop(self.size),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
+
+    def __len__(self):
+        return self._length
+
+    def preprocess_image(self, image_path):
+        image = Image.open(image_path,mode='r')
+        if not image.mode == "RGB":
+            image = image.convert("RGB")
+        # image = np.array(image).astype(np.uint8)
+        # image = self.preprocessor(image=image)["image"]
+        # image = (image / 127.5 - 1.0).astype(np.float32)
+        image = self.preprocessor(image)
+        # image = image.permute(2, 0, 1) 
+        return image,image_path
+
+    def __getitem__(self, i):
+        blur,_ = self.preprocess_image(self.blur_images[i])
+        sharp,_ = self.preprocess_image(self.sharp_images[i])
+        return blur,sharp
 
 def load_data(args):
     train_data = ImagePaths(args.dataset_path, size=args.image_size)
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
     return train_loader
 
+def load_data_vqgan(args):
+    train_data = ImagePathsVQ(args.dataset_path, size=args.image_size)
+    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
+    return train_loader
 
 # --------------------------------------------- #
 #                  Module Utils
