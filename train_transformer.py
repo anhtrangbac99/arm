@@ -9,7 +9,7 @@ from torchvision import utils as vutils
 from transformer import VQGANTransformer
 from utils import load_data, plot_images
 from lr_schedule import WarmupLinearLRSchedule
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 
 class TrainTransformer:
@@ -26,13 +26,13 @@ class TrainTransformer:
             current_step=args.start_from_epoch
         )
 
-        # if args.start_from_epoch > 1:
-        #     self.model.load_checkpoint(args.start_from_epoch)
-        #     print(f"Loaded Transformer from epoch {args.start_from_epoch}.")
-        # if args.run_name:
-        #     self.logger = SummaryWriter(f"./runs/{args.run_name}")
-        # else:
-        #     self.logger = SummaryWriter()
+        if args.start_from_epoch > 1:
+            self.model.load_checkpoint(args.start_from_epoch)
+            print(f"Loaded Transformer from epoch {args.start_from_epoch}.")
+        if args.run_name:
+            self.logger = SummaryWriter(f"./runs/{args.run_name}")
+        else:
+            self.logger = SummaryWriter()
         self.train(args)
 
     def train(self, args):
@@ -49,36 +49,23 @@ class TrainTransformer:
                     imgs,_ = imgs
                     imgs = imgs.to(device=args.device)
                     logits, target = self.model(imgs)
-                    logits = torch.permute(logits,(0,2,1)).view(logits.shape[0],logits.shape[2],target.shape[2],target.shape[3])
-                    # print(logits.reshape(-1, logits.size(-1)).shape)
-                    # print(target.reshape(-1).shape)
-                    # loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), target.reshape(-1))
-                    
-                    loss = F.mse_loss(logits,target)
+                    loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), target.reshape(-1))
                     loss.backward()
-
-                    # print('correct')
-                    # exit()
                     if step % args.accum_grad == 0:
                         self.optim.step()
                         self.optim.zero_grad()
-                    if step % args.save == 0:
-                        torch.save(self.model.state_dict(), os.path.join("checkpoints", f"transformer_epoch_{epoch}_step_{step}.pt"))
-
                     step += 1
                     pbar.set_postfix(Transformer_Loss=np.round(loss.cpu().detach().numpy().item(), 4))
                     pbar.update(0)
-                    
-
-                    # self.logger.add_scalar("Cross Entropy Loss", np.round(loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
-            # try:
-            #     log, sampled_imgs = self.model.log_images(imgs[0:1])
-            #     vutils.save_image(sampled_imgs.add(1).mul(0.5), os.path.join("results", f"{epoch}.jpg"), nrow=4)
-            #     plot_images(log)
-            # except:
-            #     pass
-            # if epoch % args.ckpt_interval == 0:
-            #     torch.save(self.model.state_dict(), os.path.join("checkpoints", f"transformer_epoch_{epoch}.pt"))
+                    self.logger.add_scalar("Cross Entropy Loss", np.round(loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
+            try:
+                log, sampled_imgs = self.model.log_images(imgs[0:1])
+                vutils.save_image(sampled_imgs.add(1).mul(0.5), os.path.join("results", f"{epoch}.jpg"), nrow=4)
+                plot_images(log)
+            except:
+                pass
+            if epoch % args.ckpt_interval == 0:
+                torch.save(self.model.state_dict(), os.path.join("checkpoints", f"transformer_epoch_{epoch}.pt"))
             torch.save(self.model.state_dict(), os.path.join("checkpoints", "transformer_current.pt"))
 
     def configure_optimizers(self):
@@ -110,10 +97,11 @@ class TrainTransformer:
         return optimizer
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="VQGAN")
     parser.add_argument('--run-name', type=str, default=None)
-    parser.add_argument('--latent-dim', type=int, default=32, help='Latent dimension n_z.')
+    parser.add_argument('--latent-dim', type=int, default=361, help='Latent dimension n_z.')
     parser.add_argument('--image-size', type=int, default=64, help='Image height and width.)')
     parser.add_argument('--num-codebook-vectors', type=int, default=8192, help='Number of codebook vectors.')
     parser.add_argument('--beta', type=float, default=0.25, help='Commitment loss scalar.')
@@ -129,6 +117,8 @@ if __name__ == '__main__':
     parser.add_argument('--learning-rate', type=float, default=1e-4, help='Learning rate.')
     parser.add_argument('--path',type=str,default='flows_GPRO.pth')
     parser.add_argument('--sos-token', type=int, default=1025, help='Start of Sentence token.')
+    parser.add_argument('--vq-path',type=str,default='checkpoints_vqgan/vqgan_epoch_49.pt')
+    parser.add_argument('--kernel-size',type=int,default=19)
 
     parser.add_argument('--n-layers', type=int, default=24, help='Number of layers of transformer.')
     parser.add_argument('--dim', type=int, default=768, help='Dimension of transformer.')
@@ -140,17 +130,17 @@ if __name__ == '__main__':
     args.run_name = "<name>"
     args.dataset_path = r"GOPRO/train"
     args.checkpoint_path = r"checkpoints"
-    args.n_layers = 4
-    args.dim = 256
+    args.n_layers = 24
+    args.dim = 768
     args.hidden_dim = 3072
-    args.batch_size = 4
+    args.batch_size = 2
     args.accum_grad = 25
     args.epochs = 1000
 
     args.start_from_epoch = 0
 
-    args.num_codebook_vectors = 1024
-    args.num_image_tokens = 256
+    args.num_codebook_vectors = 4096
+    args.num_image_tokens = args.image_size**2 #* 361
 
 
     train_transformer = TrainTransformer(args)

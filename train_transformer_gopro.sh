@@ -2,7 +2,7 @@
 #SBATCH -o outputs/train_image_gopro/job_%j.output
 #SBATCH -e errors/train_image_gopro/job_%j.error
 #SBATCH -p PA100q
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH -n 2
 #SBATCH -c 2
 

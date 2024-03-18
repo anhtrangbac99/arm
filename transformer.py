@@ -7,9 +7,7 @@ import math
 from bidirectional_transformer import BidirectionalTransformer
 _CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf]).to("cuda")
 
-from basicsr.models.archs.my_module import code_extra_mean_var
-from vq_modules import Encoder, Decoder
-
+# from 
 class VQGANTransformer(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -17,136 +15,67 @@ class VQGANTransformer(nn.Module):
         self.sos_token = args.num_codebook_vectors + 1
         self.mask_token_id = args.num_codebook_vectors
         self.choice_temperature = 4.5
-        self.kernel_extra = code_extra_mean_var(kernel_size=19)
-        self.kernel_size = 19 #args.kernel_size
+
         self.gamma = self.gamma_func("cosine")
 
         # self.transformer = BidirectionalTransformer(
         #                         patch_size=8, embed_dim=args.dim, depth=args.n_layers, num_heads=12, mlp_ratio=4, qkv_bias=True,
         #                         norm_layer=partial(nn.LayerNorm, eps=1e-6), vocab_size=8192+1)
         self.transformer = BidirectionalTransformer(args)
-        # self.vqgan = self.load_vqgan()
-        # self.encoder = Encoder(args)
-        self.flows = self.load_flows(args)
+        self.vqgan = self.load_vqgan(args)
         print(f"Transformer parameters: {sum([p.numel() for p in self.transformer.parameters()])}")
 
     def load_checkpoint(self, epoch):
         self.load_state_dict(torch.load(os.path.join("checkpoints", f"transformer_epoch_{epoch}.pt")))
         print("Check!")
 
-    # @staticmethod
-    # def load_vqgan():
-    #     from test.vq_f16 import VQModel
-    #     model = VQModel()
-    #     model = model.eval()
-    #     return model
-
     @staticmethod
-    def load_flows(args):
-        from basicsr.models.archs.Flow_arch import KernelPrior
-        flow = KernelPrior(n_blocks=5, input_size=19 ** 2, hidden_size=25, n_hidden=1, kernel_size=19)
-        flow.load_state_dict(torch.load(args.path))
-        for param in flow.parameters():
+    def load_vqgan(args):
+        from vqgan import VQGAN
+        from collections import OrderedDict
+        state_dict = torch.load(args.vq_path)
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        model = VQGAN(args)
+        model.load_state_dict(new_state_dict)
+        for param in model.parameters():
             param.requires_grad = False 
-        flow = flow.eval()
-        return flow
+        model = model.eval()
+        return model
 
-        
     @torch.no_grad()
     def encode_to_z(self, x):
-        # quant_z, indices, _ = self.vqgan.encode(x)
-        quant_z, _, (_, _, indices) = self.vqgan.encode(x)
+        quant_z, indices, _ = self.vqgan.encode(x)
+        # quant_z, _, (_, _, indices) = self.vqgan.encode(x)
         indices = indices.view(quant_z.shape[0], -1)
         return quant_z, indices
-    
-    @torch.no_grad()
-    def flow_to_log_prob(self,x):
-        log_prob,_ = self.flows.log_prob(x)
-        k,_ = self.flows.inverse(x)
-        return k,-log_prob
 
     def forward(self, x):
-        
-        B,C,H,W = x.shape
-        # print(x.shape)
-        # _, z_indices = self.encode_to_z(x)
-        #
-        # r = np.random.uniform()
-        # mask = torch.bernoulli(r * torch.ones(z_indices.shape[-1], device=z_indices.device))
-        # mask = mask.round().bool()
-        #
-        # target = z_indices[:, mask]
-        #
-        # logits = self.transformer(z_indices, mask)
+        _, z_indices = self.encode_to_z(x)
+        sos_tokens = torch.ones(x.shape[0], 1, dtype=torch.long, device=z_indices.device) * self.sos_token
 
-        
-         # kernel estimation: size [B, H*W, 19, 19]
-        with torch.no_grad():
-            kernel_code, _ = self.kernel_extra(x)
-            kernel_code = (kernel_code - torch.mean(kernel_code, dim=[2, 3], keepdim=True)) / torch.std(kernel_code,
-                                                                                                        dim=[2, 3],
-                                                                                                        keepdim=True)
-            # # code uncertainty
-            # sigma = kernel_var
-            # kernel_code_uncertain = kernel_code * torch.sqrt(1 - torch.square(sigma)) + torch.randn_like(kernel_code) * sigma
-
-            kernel,nev_log_prb = self.flow_to_log_prob(kernel_code.reshape(kernel_code.shape[0]*kernel_code.shape[1], -1))
-            kernel = kernel.reshape(kernel_code.shape[0], kernel_code.shape[1], self.kernel_size, self.kernel_size)
-            kernel_blur = kernel
-
-            kernel = kernel.permute(0, 2, 3, 1).reshape(B, self.kernel_size*self.kernel_size, x.shape[2], x.shape[3]) #Bx(19*19)xHxW
-            nev_log_prb = nev_log_prb.reshape(B,H,W)
-
-
-        sos_tokens = torch.ones(kernel.shape, dtype=torch.long, device=kernel.device) * self.sos_token
-
-        # r = math.floor(self.gamma(np.random.uniform()) kernel.shape[1])
-        # sample = torch.rand(kernel.shape, device=kernel.device).topk(r, dim=1).indices
-        temperature = 0.3
-        mask_ratio = 0.7
-        threshold = torch.min(nev_log_prb) + temperature* (torch.max(nev_log_prb) - torch.min(nev_log_prb))
-        unknown_number_in_the_beginning = (nev_log_prb <= threshold)
-        
-        mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
-        mask_len = torch.floor(unknown_number_in_the_beginning*mask_ratio)
-        # mask_len = torch.zeros_like(mask_len) # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
-        
-        confidence = nev_log_prb #+ temperature * torch.distributions.gumbel.Gumbel(0, 1).sample(nev_log_prb.shape).to(kernel.device)
-        # print(confidence)
-        sorted_confidence, _ = torch.sort(confidence, dim=-1)
-        
-        # Obtains cut off threshold given the mask lengths.
-
-        cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
-        # Masks tokens with lower confidence.
-        # print(cut_off)
-        sample = (confidence <= cut_off)
-        # print(sample)
-        # print(sample.indices[0])
-        
-        # sample = torch.topk(confidence,3)
-        mask = torch.ones(kernel.shape, dtype=torch.bool, device=kernel.device)
-        # print(mask*sample.view(B,1,H,W))
-        mask = mask * sample.view(B,1,H,W)
-        # print(mask)
-
-        # mask.scatter_(dim=1, index=sample.indices, value=True)
+        r = math.floor(self.gamma(np.random.uniform()) * z_indices.shape[1])
+        sample = torch.rand(z_indices.shape, device=z_indices.device).topk(r, dim=1).indices
+        mask = torch.zeros(z_indices.shape, dtype=torch.bool, device=z_indices.device)
+        mask.scatter_(dim=1, index=sample, value=True)
 
         # torch.rand(z_indices.shape, device=z_indices.device)
         # mask = torch.bernoulli(r * torch.ones(z_indices.shape, device=z_indices.device))
         # mask = torch.bernoulli(torch.rand(z_indices.shape, device=z_indices.device))
         # mask = mask.round().to(dtype=torch.int64)
         # masked_indices = torch.zeros_like(z_indices)
-        masked_indices = self.mask_token_id * torch.ones_like(kernel, device=kernel.device)
-        a_kernel= mask * kernel + (~mask) * masked_indices
-        # a_kernel = torch.cat((sos_tokens, a_kernel), dim=1).long()
+        masked_indices = self.mask_token_id * torch.ones_like(z_indices, device=z_indices.device)
+        a_indices = mask * z_indices + (~mask) * masked_indices
 
-        # target = torch.cat((sos_tokens, kernel), dim=1)
+        a_indices = torch.cat((sos_tokens, a_indices), dim=1)
 
-        logits = self.transformer(a_kernel.float())
-        # print(logits.shape)
-        # print(kernel.shape)
-        return logits, kernel #target
+        target = torch.cat((sos_tokens, z_indices), dim=1)
+
+        logits = self.transformer(a_indices)
+
+        return logits, target
 
     def top_k_logits(self, logits, k):
         v, ix = torch.topk(logits, k)
@@ -195,7 +124,7 @@ class VQGANTransformer(nn.Module):
         masking = (confidence < cut_off)
         return masking
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def sample_good(self, inputs=None, num=1, T=11, mode="cosine"):
         # self.transformer.eval()
         N = self.num_image_tokens
@@ -235,18 +164,17 @@ class VQGANTransformer(nn.Module):
             # Masks tokens with lower confidence.
             cur_ids = torch.where(masking, self.mask_token_id, sampled_ids)
             # print((cur_ids == 8192).count_nonzero())
-
         # self.transformer.train()
         return cur_ids[:, 1:]
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def log_images(self, x, mode="cosine"):
         log = dict()
 
         _, z_indices = self.encode_to_z(x)
 
         # create new sample
-        index_sample = self.sample_good(mode=mode)
+        index_sample = self.sample_good(z_indices,mode=mode)
         x_new = self.indices_to_image(index_sample)
 
         # create a "half" sample
@@ -261,14 +189,14 @@ class VQGANTransformer(nn.Module):
         log["rec"] = x_rec
         log["half_sample"] = x_sample
         log["new_sample"] = x_new
-        return log, torch.concat((x, x_rec, x_sample, x_new))
+        return log, torch.concat((x_rec, x_sample, x_new))
 
-    def indices_to_image(self, indices, p1=32, p2=32):
-        ix_to_vectors = self.vqgan.codebook.embedding(indices).reshape(indices.shape[0], p1, p2, 32)
+    def indices_to_image(self, indices, p1=64, p2=64, p3 = 361):
+        ix_to_vectors = self.vqgan.codebook.embedding(indices).reshape(indices.shape[0], p1, p2, p3)
         # ix_to_vectors = self.vqgan.quantize.embedding(indices).reshape(indices.shape[0], 16, 16, 256)
         ix_to_vectors = ix_to_vectors.permute(0, 3, 1, 2)
-        image = self.vqgan.decode(ix_to_vectors)
-        return image
+        # image = self.vqgan.decode(ix_to_vectors)
+        return ix_to_vectors#image
 
     @staticmethod
     def create_masked_image(image: torch.Tensor, x_start: int = 100, y_start: int = 100, size: int = 50):

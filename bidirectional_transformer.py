@@ -63,8 +63,6 @@ class PositionalEmbedding(nn.Module):
         position = torch.arange(0, max_len).float().unsqueeze(1)
         div_term = (torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)).exp()
 
-        print(position.shape)
-        print(div_term.shape)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
 
@@ -82,7 +80,7 @@ class Encoder(nn.Module):
     def __init__(self, dim=768, hidden_dim=3072):
         super(Encoder, self).__init__()
         # self.MultiHeadAttention = MultiHeadAttention(dim)
-        self.MultiHeadAttention = nn.MultiheadAttention(dim, num_heads=4, batch_first=True, dropout=0.1)
+        self.MultiHeadAttention = nn.MultiheadAttention(dim, num_heads=8, batch_first=True, dropout=0.1)
         self.LayerNorm1 = nn.LayerNorm(dim, eps=1e-12)
         self.LayerNorm2 = nn.LayerNorm(dim, eps=1e-12)
         self.MLP = nn.Sequential(*[
@@ -94,7 +92,7 @@ class Encoder(nn.Module):
         self.dropout = nn.Dropout(p=0.1)
 
     def forward(self, x):
-        # self.MultiHeadAttention(x,x,x)
+        # attn = self.MultiHeadAttention(x)
         attn, _ = self.MultiHeadAttention(x, x, x, need_weights=False)
         attn = self.dropout(attn)
         x = x.add(attn)
@@ -108,19 +106,16 @@ class Encoder(nn.Module):
 class BidirectionalTransformer(nn.Module):
     def __init__(self, args):
         super(BidirectionalTransformer, self).__init__()
-        self.image_size = args.image_size
         self.num_image_tokens = args.num_image_tokens
-        # self.tok_emb = nn.Embedding(361*81, args.dim)
-        # self.pos_emb = PositionalEmbedding(10, self.num_image_tokens + 1)
-        self.emb = nn.Conv2d(19*19,args.dim,kernel_size = 1)
-        self.pos_emb = nn.init.trunc_normal_(nn.Parameter(torch.zeros(args.image_size,args.image_size)), 0., 0.02)
+        self.tok_emb = nn.Embedding(args.num_codebook_vectors + 2, args.dim)
+        self.pos_emb = PositionalEmbedding(args.dim, self.num_image_tokens + 1)
+        # self.pos_emb = nn.init.trunc_normal_(nn.Parameter(torch.zeros(self.num_image_tokens + 1, args.dim)), 0., 0.02)
         # self.register_buffer("pos_emb", nn.init.trunc_normal_(nn.Parameter(torch.zeros(1024, args.dim)), 0., 0.02))
         self.blocks = nn.Sequential(*[Encoder(args.dim, args.hidden_dim) for _ in range(args.n_layers)])
         self.Token_Prediction = nn.Sequential(*[
-            nn.Linear(in_features=args.dim, out_features=361),
+            nn.Linear(in_features=args.dim, out_features=args.dim),
             nn.GELU(),
-            nn.LayerNorm(361, eps=1e-12),
-            nn.Linear(361,361)
+            nn.LayerNorm(args.dim, eps=1e-12)
         ])
         self.bias = nn.Parameter(torch.zeros(self.num_image_tokens+1, args.num_codebook_vectors + 2))
         self.ln = nn.LayerNorm(args.dim, eps=1e-12)
@@ -128,38 +123,14 @@ class BidirectionalTransformer(nn.Module):
         self.apply(weights_init)
 
     def forward(self, x):
-        # print(x.shape)
-        B,C,H,W = x.shape
-        # x = torch.permute(x,(0,2,3,1)).view(B,-1,C)
-        # img = x.type(torch.LongTensor)
-
-        # print(img.type())
-        # print(img.device)
-        # x = x.type(torch.LongTensor)
-        # token_embeddings = self.tok_emb(img)
-        # print(token_embeddings.shape)
-        emb = self.emb(x)
-
-        # emb = torch.permute(x,(0,2,3,1)).view(B,-1,768)
-        # print(emb.shape)
-        t = x.shape[1]
-        position_embeddings = self.pos_emb[:t, :]#.view(-1,256)
-        # position_embeddings = self.pos_emb(x)
-        # print(position_embeddings.shape)
-        # print(emb.shape)
-        embed = position_embeddings + emb 
-
-        # print(embed.shape)
-        embed = torch.permute(embed,(0,2,3,1))
-        embed = embed.view(B,-1,256)
-        embed = self.ln(embed)
-        # print(embed.shape)
-        embed = self.drop(embed)
-        # print(embed.shape)
-        # embed = self.blocks[0](embed)
+        token_embeddings = self.tok_emb(x)
+        t = token_embeddings.shape[1]
+        # position_embeddings = self.pos_emb[:t, :]
+        position_embeddings = self.pos_emb(x)
+        embed = self.drop(self.ln(token_embeddings + position_embeddings))
         embed = self.blocks(embed)
         embed = self.Token_Prediction(embed)
-        # logits = torch.matmul(embed, self.tok_emb.weight.T) + self.bias
-        # print(embed.shape)
+        logits = torch.matmul(embed, self.tok_emb.weight.T) 
+        logits = logits+ self.bias
 
-        return embed
+        return logits

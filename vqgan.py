@@ -21,6 +21,11 @@ class VQGAN(nn.Module):
         self.quant_conv = nn.Conv2d(args.latent_dim, args.latent_dim, 1).to(device=args.device)
         self.post_quant_conv = nn.Conv2d(args.latent_dim, args.latent_dim, 1).to(device=args.device)
 
+    # def init_from_ckpt(self, args):
+    #     sd = torch.load(args.vq_path, map_location=args.device)
+    #     self.load_state_dict(sd, strict=False)
+    #     print(f"Restored from {path}")
+
     @staticmethod
     def load_flows(args):
         from basicsr.models.archs.Flow_arch import KernelPrior
@@ -71,14 +76,15 @@ class VQGAN(nn.Module):
         return self.kernel_conv(img,kernel)
 
     def encode(self, x):
-        encoded_images = self.encoder(x)
+        encoded_images = self.kernel_estimate(x)
+
         quantized_encoded_images = self.quant_conv(encoded_images)
         codebook_mapping, codebook_indices, q_loss = self.codebook(quantized_encoded_images)
         return codebook_mapping, codebook_indices, q_loss
 
-    def decode(self, z):
+    def decode(self, z,):
         quantized_codebook_mapping = self.post_quant_conv(z)
-        decoded_images = self.decoder(quantized_codebook_mapping)
+        decoded_images = self.conv_kernel(sharps,quantized_codebook_mapping)        
         return decoded_images
 
     def calculate_lambda(self, nll_loss, g_loss):

@@ -5,3 +5,5 @@ errors/*
 *.sh
 results_vqgan/*
 checkpoints_vqgan/*
+checkpoints_res/*
+results_res/*
