@@ -13,6 +13,7 @@ from basicsr.models.archs.my_module import code_extra_mean_var
 from transformer import VQGANTransformer
 import numpy as np
 from collections import OrderedDict
+import os
 class ResBlock(nn.Module):
     def __init__(self, ch):
         super(ResBlock, self).__init__()
@@ -282,18 +283,18 @@ class UFPNet_code_uncertainty(nn.Module):
         return model, kernel_conv
 
     def load_checkpoint(self, epoch):
-        state_dict = torch.load(torch.load(os.path.join("checkpoints_restoration", f"restoration_epoch_{epoch}.pt")))
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            name = k[7:] # remove `module.`
-            new_state_dict[name] = v
+        state_dict = torch.load(os.path.join("checkpoints_res", f"transformer_epoch_{epoch}.pt"))
+        # new_state_dict = OrderedDict()
+        # for k, v in state_dict.items():
+        #     name = k[7:] # remove `module.`
+        #     new_state_dict[name] = v
 
-        self.load_state_dict(new_state_dict)
+        self.load_state_dict(state_dict)
         print("Check!")
 
     def generate_k(self, image, n_row=1):
         
-        log_images, _ = self.transformer.log_images(image)
+        log_images = self.transformer.log_images(image)
 
         # unconditional model
         # for a random Gaussian vector, its l2norm is always close to 1.
@@ -314,7 +315,7 @@ class UFPNet_code_uncertainty(nn.Module):
         # with torch.no_grad():
             # kernel estimation: size [B, H*W, 19, 19]
         logs_kernels = self.generate_k(inp)
-        kernel = logs_kernels['new_sample']
+        kernel = logs_kernels['rec']
         kernel_blur = kernel.clone()
         x = self.intro(inp)
 

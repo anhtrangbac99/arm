@@ -174,22 +174,22 @@ class VQGANTransformer(nn.Module):
         _, z_indices = self.encode_to_z(x)
 
         # create new sample
-        index_sample = self.sample_good(z_indices,mode=mode)
-        x_new = self.indices_to_image(index_sample)
+        # index_sample = self.sample_good(z_indices,mode=mode)
+        # x_new = self.indices_to_image(index_sample)
 
         # create a "half" sample
-        z_start_indices = z_indices[:, :z_indices.shape[1] // 2]
-        half_index_sample = self.sample_good(z_start_indices, mode=mode)
-        x_sample = self.indices_to_image(half_index_sample)
+        # z_start_indices = z_indices[:, :z_indices.shape[1] // 2]
+        # half_index_sample = self.sample_good(z_start_indices, mode=mode)
+        # x_sample = self.indices_to_image(half_index_sample)
 
         # create reconstruction
         x_rec = self.indices_to_image(z_indices)
 
-        log["input"] = x
+        # log["input"] = x
         log["rec"] = x_rec
-        log["half_sample"] = x_sample
-        log["new_sample"] = x_new
-        return log, torch.concat((x_rec, x_sample, x_new))
+        # log["half_sample"] = x_sample
+        # log["new_sample"] = x_new
+        return log#, torch.concat((x_rec, x_sample, x_new))
 
     def indices_to_image(self, indices, p1=64, p2=64, p3 = 361):
         ix_to_vectors = self.vqgan.codebook.embedding(indices).reshape(indices.shape[0], p1, p2, p3)

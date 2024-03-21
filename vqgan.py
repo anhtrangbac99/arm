@@ -104,7 +104,15 @@ class VQGAN(nn.Module):
         return disc_factor
 
     def load_checkpoint(self, path):
-        self.load_state_dict(torch.load(path))
+        from collections import OrderedDict
+
+        state_dict = torch.load(path)
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        
+        self.load_state_dict(new_state_dict)
         print("Loaded Checkpoint for VQGAN....")
 
 
@@ -112,21 +120,7 @@ class Kernel_Conv(nn.Module):
     def __init__(self, kernel_size, in_ch, out_ch):
         super(Kernel_Conv, self).__init__()
         self.kernel_size = kernel_size
-        self.conv_1 = nn.Sequential(
-                        nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=1,padding=1),
-                        nn.GELU()
-                        )
-        # self.conv_kernel = nn.Sequential(
-        #                 nn.Conv2d(kernel_size*kernel_size, out_ch, kernel_size=1, stride=1, padding=1),
-        #                 nn.GELU(),
-        #                 nn.Conv2d(out_ch, out_ch, kernel_size=1, stride=1, padding=1),
-        #                 nn.GELU()
-        #                 )
-        self.conv_2 = nn.Sequential(
-                        nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1,padding=1),
-                        nn.Sigmoid()
-                        )
-    
+        
     def convolution_with_different_kernels(self,image, kernels,kernel_size):
         # Pad the image tensor to handle borders
         pad = int(19/2)
@@ -147,11 +141,7 @@ class Kernel_Conv(nn.Module):
 
         return convolved_values_sum
 
-    def forward(self, input, kernel):
-        x = self.conv_1(input)
-
-        output = self.convolution_with_different_kernels(x,kernel,self.kernel_size)
-
-        output = self.conv_2(output)
+    def forward(self, inp, kernel):
+        output = self.convolution_with_different_kernels(inp,kernel,self.kernel_size)
 
         return output

@@ -26,7 +26,8 @@ class TrainRestoration:
             current_step=args.start_from_epoch
         )
 
-        self.PSNRLoss = PSNRLoss()
+        # self.PSNRLoss = PSNRLoss()
+        self.PSNRLoss = L1Loss(loss_weight=1)  
         self.L1Loss = L1Loss(loss_weight=0.01)
         if args.start_from_epoch > 1:
             self.model.load_checkpoint(args.start_from_epoch)
@@ -54,6 +55,7 @@ class TrainRestoration:
                     results = self.model(imgs,sharps)
                     kernels, deblurs, reblurs = results[0], results[1], results[2]
 
+
                     psnr_loss = self.PSNRLoss(deblurs,sharps)
                     l1_loss = self.L1Loss(reblurs,imgs)
 
@@ -72,15 +74,18 @@ class TrainRestoration:
                     self.logger.add_scalar("PSNR Loss", np.round(psnr_loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
                     self.logger.add_scalar("L1 Loss", np.round(l1_loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
 
-            try:
-                sampled_imgs = torch.concat((imgs[0], sharps[0], deblurs[0], reblurs[0]))
-                vutils.save_image(sampled_imgs, os.path.join("results_res", f"{epoch}.jpg"), nrow=4)
-                # plot_images(log)
-            except:
-                pass
+                    if step % 200:
+                        try:
+                            sampled_imgs = torch.concat((imgs[0], sharps[0], deblurs[0], reblurs[0]))
+                            vutils.save_image([imgs[0], sharps[0], deblurs[0], reblurs[0]], os.path.join("results_res/l1loss", f"{epoch}.jpg"), nrow=4)
+                        # plot_images(log)
+                        except:
+                            pass
+
+            
             if epoch % args.ckpt_interval == 0:
-                torch.save(self.model.state_dict(), os.path.join("checkpoints_res", f"transformer_epoch_{epoch}.pt"))
-            torch.save(self.model.state_dict(), os.path.join("checkpoints_res", "transformer_current.pt"))
+                torch.save(self.model.state_dict(), os.path.join("checkpoints_res/l1loss", f"transformer_epoch_{epoch}.pt"))
+            torch.save(self.model.state_dict(), os.path.join("checkpoints_res/l1loss", "transformer_current.pt"))
 
     def configure_optimizers(self):
         # decay, no_decay = set(), set()
@@ -147,7 +152,7 @@ if __name__ == '__main__':
     args.n_layers = 24
     args.dim = 768
     args.hidden_dim = 3072
-    args.batch_size = 2
+    args.batch_size = 8
     args.accum_grad = 25
     args.epochs = 1000
 

@@ -59,14 +59,14 @@ class TrainTransformer:
                     pbar.update(0)
                     self.logger.add_scalar("Cross Entropy Loss", np.round(loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
             try:
-                log, sampled_imgs = self.model.log_images(imgs[0:1])
+                sampled_imgs = self.model.log_images(imgs[0])['rec']
                 vutils.save_image(sampled_imgs.add(1).mul(0.5), os.path.join("results", f"{epoch}.jpg"), nrow=4)
                 plot_images(log)
             except:
                 pass
             if epoch % args.ckpt_interval == 0:
-                torch.save(self.model.state_dict(), os.path.join("checkpoints", f"transformer_epoch_{epoch}.pt"))
-            torch.save(self.model.state_dict(), os.path.join("checkpoints", "transformer_current.pt"))
+                torch.save(self.model.state_dict(), os.path.join("checkpoints/256", f"transformer_epoch_{epoch}.pt"))
+            torch.save(self.model.state_dict(), os.path.join("checkpoints/256", "transformer_current.pt"))
 
     def configure_optimizers(self):
         # decay, no_decay = set(), set()
@@ -102,7 +102,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="VQGAN")
     parser.add_argument('--run-name', type=str, default=None)
     parser.add_argument('--latent-dim', type=int, default=361, help='Latent dimension n_z.')
-    parser.add_argument('--image-size', type=int, default=64, help='Image height and width.)')
+    parser.add_argument('--image-size', type=int, default=256, help='Image height and width.)')
     parser.add_argument('--num-codebook-vectors', type=int, default=8192, help='Number of codebook vectors.')
     parser.add_argument('--beta', type=float, default=0.25, help='Commitment loss scalar.')
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images.')

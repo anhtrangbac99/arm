@@ -8,7 +8,7 @@ from torchvision import utils as vutils
 from lpips import LPIPS
 from utils import load_data_vqgan
 from vqgan import VQGAN, Kernel_Conv
-
+from torchvision import transforms 
 
 class TrainVQGAN:
     def __init__(self, args):
@@ -21,7 +21,9 @@ class TrainVQGAN:
         self.opt_vq = self.configure_optimizers(args)
 
         self.prepare_training()
-
+        self.postprocess = transforms.Compose([
+                transforms.Normalize((-0.485/0.229, -0.456/0.224, -0.406/0.225),(1/0.229, 1/0.224, 1/0.255))
+        ])
         self.train(args)
 
     @staticmethod
@@ -43,8 +45,8 @@ class TrainVQGAN:
         return opt_vq#, opt_kernel_conv
 
     def train(self, args):
-        devide_ids = range(torch.cuda.device_count())
-        self.vqgan = torch.nn.DataParallel(self.vqgan,device_ids=devide_ids)
+        # devide_ids = range(torch.cuda.device_count())
+        # self.vqgan = torch.nn.DataParallel(self.vqgan,device_ids=devide_ids)
         train_dataset = load_data_vqgan(args)
         steps_one_epoch = len(train_dataset)
         for epoch in range(args.epochs):
@@ -91,7 +93,7 @@ class TrainVQGAN:
                     pbar.set_postfix(VQ_Loss=np.round(loss_vq.mean().cpu().detach().numpy().item(), 5))
                     pbar.update(0)
                 with torch.no_grad():
-                    both = torch.cat((blurry[:4], disc_fake[:4]))
+                    both = torch.cat((self.postprocess(blurry[:4]), self.postprocess(disc_fake[:4])))
                     vutils.save_image(both, os.path.join("results_vqgan", f"{epoch}_{i}.jpg"), nrow=4)
                 torch.save(self.vqgan.state_dict(), os.path.join("checkpoints_vqgan", f"vqgan_epoch_{epoch}.pt"))
 
@@ -105,8 +107,8 @@ if __name__ == '__main__':
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images (default: 3)')
     parser.add_argument('--dataset-path', type=str, default='/data', help='Path to data (default: /data)')
     parser.add_argument('--device', type=str, default="cuda", help='Which device the training is on')
-    parser.add_argument('--batch-size', type=int, default=4, help='Input batch size for training (default: 6)')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train (default: 50)')
+    parser.add_argument('--batch-size', type=int, default=8, help='Input batch size for training (default: 6)')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train (default: 50)')
     parser.add_argument('--learning-rate', type=float, default=2.25e-05, help='Learning rate (default: 0.0002)')
     parser.add_argument('--beta1', type=float, default=0.5, help='Adam beta param (default: 0.0)')
     parser.add_argument('--beta2', type=float, default=0.9, help='Adam beta param (default: 0.999)')
