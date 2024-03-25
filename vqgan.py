@@ -31,12 +31,13 @@ class VQGAN(nn.Module):
         from basicsr.models.archs.Flow_arch import KernelPrior
         flow = KernelPrior(n_blocks=5, input_size=19 ** 2, hidden_size=25, n_hidden=1, kernel_size=19)
         flow.load_state_dict(torch.load(args.path))
-        for param in flow.parameters():
-            param.requires_grad = False 
+        if args.finetuning == False:
+            for param in flow.parameters():
+                param.requires_grad = False 
         flow = flow.eval()
         return flow
     
-    @torch.no_grad()
+    # @torch.no_grad()
     def flow_to_log_prob(self,x):
         log_prob,_ = self.flows.log_prob(x)
         k,_ = self.flows.inverse(x)
@@ -60,6 +61,13 @@ class VQGAN(nn.Module):
             
             return kernel
     
+    def kernel_estimate_gen(self,imgs,sharps):
+        with torch.no_grad():
+            kernels = self.kernel_estimate(imgs)
+            reblurs = self.conv_kernel(sharps,kernels)
+
+        return reblurs
+
     def forward(self, imgs,sharps):
 
         kernel = self.kernel_estimate(imgs)
@@ -103,16 +111,19 @@ class VQGAN(nn.Module):
             disc_factor = value
         return disc_factor
 
-    def load_checkpoint(self, path):
+    def load_checkpoint(self, path, parallel=False):
         from collections import OrderedDict
 
         state_dict = torch.load(path)
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            name = k[7:] # remove `module.`
-            new_state_dict[name] = v
-        
-        self.load_state_dict(new_state_dict)
+        if parallel:
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            
+            self.load_state_dict(new_state_dict)
+        else:
+            self.load_state_dict(state_dict)
         print("Loaded Checkpoint for VQGAN....")
 
 

@@ -94,15 +94,15 @@ class TrainVQGAN:
                     pbar.update(0)
                 with torch.no_grad():
                     both = torch.cat((self.postprocess(blurry[:4]), self.postprocess(disc_fake[:4])))
-                    vutils.save_image(both, os.path.join("results_vqgan", f"{epoch}_{i}.jpg"), nrow=4)
-                torch.save(self.vqgan.state_dict(), os.path.join("checkpoints_vqgan", f"vqgan_epoch_{epoch}.pt"))
+                    vutils.save_image(both, os.path.join("results_vqgan/finetuning_1024", f"{epoch}_{i}.jpg"), nrow=4)
+                torch.save(self.vqgan.state_dict(), os.path.join("checkpoints_vqgan/finetuning_1024", f"vqgan_epoch_{epoch}.pt"))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="VQGAN")
     parser.add_argument('--latent-dim', type=int, default=361, help='Latent dimension n_z (default: 256)')
     parser.add_argument('--image-size', type=int, default=256, help='Image height and width (default: 256)')
-    parser.add_argument('--num-codebook-vectors', type=int, default=4096, help='Number of codebook vectors (default: 256)')
+    parser.add_argument('--num-codebook-vectors', type=int, default=1024, help='Number of codebook vectors (default: 256)')
     parser.add_argument('--beta', type=float, default=0.25, help='Commitment loss scalar (default: 0.25)')
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images (default: 3)')
     parser.add_argument('--dataset-path', type=str, default='/data', help='Path to data (default: /data)')
@@ -118,6 +118,7 @@ if __name__ == '__main__':
     parser.add_argument('--perceptual-loss-factor', type=float, default=1., help='Weighting factor for perceptual loss.')
     parser.add_argument('--kernel-size',type=int,default=19)
     parser.add_argument('--path',type=str,default='flows_GPRO.pth')
+    parser.add_argument('--finetuning',type=bool,default=False)
 
     args = parser.parse_args()
     args.dataset_path = r"GOPRO/train"

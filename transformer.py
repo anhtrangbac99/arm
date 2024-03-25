@@ -30,21 +30,28 @@ class VQGANTransformer(nn.Module):
         print("Check!")
 
     @staticmethod
-    def load_vqgan(args):
+    def load_vqgan(args,parallel=False):
         from vqgan import VQGAN
         from collections import OrderedDict
         state_dict = torch.load(args.vq_path)
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            name = k[7:] # remove `module.`
-            new_state_dict[name] = v
-        model = VQGAN(args)
-        model.load_state_dict(new_state_dict)
-        for param in model.parameters():
-            param.requires_grad = False 
-        model = model.eval()
-        return model
-
+        if parallel:
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            model = VQGAN(args)
+            model.load_state_dict(new_state_dict)
+            for param in model.parameters():
+                param.requires_grad = False 
+            model = model.eval()
+            return model
+        else:
+            model = VQGAN(args)
+            model.load_state_dict(state_dict)
+            for param in model.parameters():
+                param.requires_grad = False 
+            model = model.eval()
+            return model
     @torch.no_grad()
     def encode_to_z(self, x):
         quant_z, indices, _ = self.vqgan.encode(x)

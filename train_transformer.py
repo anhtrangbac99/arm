@@ -10,11 +10,12 @@ from transformer import VQGANTransformer
 from utils import load_data, plot_images
 from lr_schedule import WarmupLinearLRSchedule
 from torch.utils.tensorboard import SummaryWriter
-
+from torchvision import transforms 
 
 class TrainTransformer:
     def __init__(self, args):
         self.model = VQGANTransformer(args).to(device=args.device)
+        self.kernel_conv = self.model.vqgan.kernel_conv
         self.optim = self.configure_optimizers()
         self.lr_schedule = WarmupLinearLRSchedule(
             optimizer=self.optim,
@@ -26,6 +27,9 @@ class TrainTransformer:
             current_step=args.start_from_epoch
         )
 
+        self.postprocess = transforms.Compose([
+                transforms.Normalize((-0.485/0.229, -0.456/0.224, -0.406/0.225),(1/0.229, 1/0.224, 1/0.255))
+        ])
         if args.start_from_epoch > 1:
             self.model.load_checkpoint(args.start_from_epoch)
             print(f"Loaded Transformer from epoch {args.start_from_epoch}.")
@@ -59,9 +63,10 @@ class TrainTransformer:
                     pbar.update(0)
                     self.logger.add_scalar("Cross Entropy Loss", np.round(loss.cpu().detach().numpy().item(), 4), (epoch * len_train_dataset) + i)
             try:
-                sampled_imgs = self.model.log_images(imgs[0])['rec']
-                vutils.save_image(sampled_imgs.add(1).mul(0.5), os.path.join("results", f"{epoch}.jpg"), nrow=4)
-                plot_images(log)
+                with torch.no_grad():
+                    sampled_imgs = self.model.log_images(imgs)['rec']
+                    rersults = self.kernel_conv(imgs,sampled_imgs)
+                    vutils.save_image(self.postprocess(rersults), os.path.join("results/results", f"{epoch}.jpg"), nrow=4)
             except:
                 pass
             if epoch % args.ckpt_interval == 0:
@@ -102,7 +107,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="VQGAN")
     parser.add_argument('--run-name', type=str, default=None)
     parser.add_argument('--latent-dim', type=int, default=361, help='Latent dimension n_z.')
-    parser.add_argument('--image-size', type=int, default=256, help='Image height and width.)')
+    parser.add_argument('--image-size', type=int, default=64, help='Image height and width.)')
     parser.add_argument('--num-codebook-vectors', type=int, default=8192, help='Number of codebook vectors.')
     parser.add_argument('--beta', type=float, default=0.25, help='Commitment loss scalar.')
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images.')
@@ -125,11 +130,12 @@ if __name__ == '__main__':
     parser.add_argument('--hidden-dim', type=int, default=3072, help='Dimension of transformer.')
     parser.add_argument('--num-image-tokens', type=int, default=256, help='Number of image tokens.')
     parser.add_argument('--save', type=int, default=250, help='Number of image tokens.')
+    parser.add_argument('--finetuning',type=bool,default=False)
 
     args = parser.parse_args()
     args.run_name = "<name>"
     args.dataset_path = r"GOPRO/train"
-    args.checkpoint_path = r"checkpoints"
+    args.checkpoint_path = r"checkpoints/256"
     args.n_layers = 24
     args.dim = 768
     args.hidden_dim = 3072

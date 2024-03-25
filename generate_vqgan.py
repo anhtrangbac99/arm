@@ -17,33 +17,13 @@ class TrainVQGAN:
 
         # self.discriminator = Discriminator(args).to(device=args.device)
         # self.discriminator.apply(weights_init)
-        self.vqgan.load_checkpoint('checkpoints_vqgan/vqgan_epoch_49.pt')
-        self.perceptual_loss = LPIPS().eval().to(device=args.device)
-        self.opt_vq = self.configure_optimizers(args)
+        self.vqgan.load_checkpoint('checkpoints_vqgan/finetuning/vqgan_epoch_99.pt')
 
-        self.prepare_training()
         self.postprocess = transforms.Compose([
                 transforms.Normalize((-0.485/0.229, -0.456/0.224, -0.406/0.225),(1/0.229, 1/0.224, 1/0.255))
         ])
         self.generate(args)
 
-    @staticmethod
-    def prepare_training():
-        os.makedirs("results_vqgan", exist_ok=True)
-        os.makedirs("checkpoints_vqgan", exist_ok=True)
-
-    def configure_optimizers(self, args):
-        lr = args.learning_rate
-        opt_vq = torch.optim.Adam(list(self.vqgan.flows.parameters()) +
-                                  list(self.vqgan.codebook.parameters()) +
-                                  list(self.vqgan.quant_conv.parameters()) +
-                                  list(self.vqgan.post_quant_conv.parameters())+
-                                  list(self.vqgan.kernel_conv.parameters()),
-                                  lr=lr, eps=1e-08, betas=(args.beta1, args.beta2))
-        # opt_kernel_conv= torch.optim.Adam(self.kernel_conv.parameters(),
-                                        # lr=lr, eps=1e-08,betas=(args.beta1,args.beta2)
-                                    # )
-        return opt_vq#, opt_kernel_conv
 
     def generate(self, args):
         # devide_ids = range(torch.cuda.device_count())
@@ -56,10 +36,15 @@ class TrainVQGAN:
                 blurry,sharp = imgs[0].to(device=args.device),imgs[1].to(device=args.device)
                 kernel, _, q_loss,disc_fake = self.vqgan(blurry,sharp)
 
+                flow_reblur = self.vqgan.kernel_estimate_gen(blurry,sharp)
                 with torch.no_grad():
                     if i%2 == 0 :
-                        both = torch.cat((self.postprocess(blurry[:4]), self.postprocess(disc_fake[:4])))
-                        vutils.save_image(both, os.path.join("results_vqgan/gen", f"{i}.jpg"), nrow=4)
+                        both = torch.cat((self.postprocess(blurry[:2]),self.postprocess(sharp[:2]), self.postprocess(disc_fake[:2])))
+                        vutils.save_image(both, os.path.join("results_vqgan/gen", f"finetuning_{i}.jpg"), nrow=2)
+
+                        flow = torch.cat((self.postprocess(flow_reblur[:2]),flow_reblur[:2]))
+                        vutils.save_image(flow, os.path.join("results_vqgan/gen", f"finetuning_{i}_flow.jpg"), nrow=2)
+
 
 
 if __name__ == '__main__':
@@ -71,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--image-channels', type=int, default=3, help='Number of channels of images (default: 3)')
     parser.add_argument('--dataset-path', type=str, default='/data', help='Path to data (default: /data)')
     parser.add_argument('--device', type=str, default="cuda", help='Which device the training is on')
-    parser.add_argument('--batch-size', type=int, default=4, help='Input batch size for training (default: 6)')
+    parser.add_argument('--batch-size', type=int, default=2, help='Input batch size for training (default: 6)')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train (default: 50)')
     parser.add_argument('--learning-rate', type=float, default=2.25e-05, help='Learning rate (default: 0.0002)')
     parser.add_argument('--beta1', type=float, default=0.5, help='Adam beta param (default: 0.0)')
@@ -82,6 +67,7 @@ if __name__ == '__main__':
     parser.add_argument('--perceptual-loss-factor', type=float, default=1., help='Weighting factor for perceptual loss.')
     parser.add_argument('--kernel-size',type=int,default=19)
     parser.add_argument('--path',type=str,default='flows_GPRO.pth')
+    parser.add_argument('--finetuning',type=bool,default=False)
 
     args = parser.parse_args()
     args.dataset_path = r"GOPRO/train"
